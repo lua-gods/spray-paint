@@ -171,11 +171,11 @@ end
 ---@param pos Vector3
 ---@param side Entity.blockSide
 ---@param color Vector4|Vector3
----@param radius number
-local function draw(pos,side,color,radius)
+local function draw(pos,side,color)
    local dir = side2dir[side] / 16
    local block, hit = raycast:block(pos+dir,pos-dir,"COLLIDER")
-   if (hit-(pos+dir)):length() ~= 0.0625 then
+   local diff = (hit-(pos+dir))
+   if not (math.abs(diff.x) == 0.0625 or math.abs(diff.y) == 0.0625 or math.abs(diff.z) == 0.0625) then
       return
    end
       if not hasSurface(pos,side) then
@@ -183,8 +183,7 @@ local function draw(pos,side,color,radius)
    end
    local surface = getSurface(pos,side)
    if surface then
-      local penPos = surface.uvPos:copy()
-      penPos = penPos + toSurfaceUV(pos,side)
+      local penPos = surface.uvPos:copy() + toSurfaceUV(pos,side)
       graffitiTexture:setPixel(penPos.x,penPos.y,color)
    end
 end
@@ -205,7 +204,7 @@ local function setBrushRadius(radius)
    end
 end
 
-setBrushRadius(20)
+setBrushRadius(8)
 
 -->====================[ Drawing ]====================<--
 
@@ -218,8 +217,21 @@ events.WORLD_RENDER:register(function(dt)
       if block.id ~= "minecraft:air" then
          if keybind:isPressed() then
             for i = 1, #proxies, 1 do
-               local offset = proxies[i].x_y
-               draw(hit+offset,side,vec(1,1,1),1)
+               local offset = proxies[i]
+               if side == "north" then
+                  offset = offset.xy_:mul(-1,1)
+               elseif side == "east" then
+                  offset = offset._yx:mul(0,1,-1)
+               elseif side == "south" then
+                  offset = offset.xy_
+               elseif side == "west" then
+                  offset = offset._yx
+               elseif side == "up" then
+                  offset = offset.x_y:mul(1,0,1)
+               else
+                  offset = offset.x_y:mul(1,0,1)
+               end
+               draw(hit+offset,side,vec(1,1,1))
             end
          end
       end
