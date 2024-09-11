@@ -5,12 +5,14 @@ local RESOLUTION = 16
 local ATLAS_RESOLUTION = 512
 local keybind = keybinds:newKeybind("Draw","key.mouse.right")
 
+local TEXTURE_SYNC_BATCH_COUNT = 2
+
 local base64 = require("libraries.base64")
 local GNUI = require("libraries.GNUI.main")
 local screen = GNUI.getScreenCanvas()
 
 local atlasTexture = textures:newTexture("graffiti",ATLAS_RESOLUTION,ATLAS_RESOLUTION)
-local syncTexture = textures:newTexture("TextureSyncer",RESOLUTION,RESOLUTION)
+local syncTexture = textures:newTexture("TextureSyncer",RESOLUTION*TEXTURE_SYNC_BATCH_COUNT,RESOLUTION)
 
 local side2dir = {
    north = vec(0,0,-1),
@@ -39,7 +41,7 @@ atlasPreview:setSprite(GNUI.newSprite():setTexture(atlasTexture))
 screen:addChild(atlasPreview)
 
 local syncPreview = GNUI.newContainer()
-syncPreview:setSize(32,32):setPos(80,0)
+syncPreview:setSize(32*TEXTURE_SYNC_BATCH_COUNT,32):setPos(80,0)
 local syncPreviewSprite = GNUI.newSprite():setTexture(syncTexture)
 syncPreview:setSprite(syncPreviewSprite)
 screen:addChild(syncPreview)
@@ -196,30 +198,45 @@ local function makeSurface(pos,side)
 end
 
 
-
+local textureSyncCount = 0
+local uvPoses = {}
 function Surface:sync()
+   textureSyncCount = textureSyncCount + 1
+   local syncTextureOffset = (textureSyncCount-1)*RESOLUTION
    local o = self.uvPos
-   syncTexture:applyFunc(0,0,RESOLUTION,RESOLUTION,function (col, x, y)
-      return atlasTexture:getPixel(o.x+x,o.y+y)
+   syncTexture:applyFunc(syncTextureOffset,0,RESOLUTION,RESOLUTION,function (col, x, y)
+      return atlasTexture:getPixel(o.x+x-syncTextureOffset,o.y+y)
    end)
-   
+   syncTexture:update()
    local data = base64.decode(syncTexture:save())
-   pings.syncSurface(data, self.side, self.surfacePos, self.slot, self.bID, self.uvPos, self.pos)
+   uvPoses[#uvPoses+1] = self.uvPos
+   if textureSyncCount == TEXTURE_SYNC_BATCH_COUNT then
+      pings.syncTexture(data, table.unpack(uvPoses))
+   end
+   pings.syncSurface(self.side, nextFree, self.uvPos, self.pos)
    return #data
 end
 
-function pings.syncSurface(data,side,surfacePos,nextFree,bID,uvPos,pos)
-   local decompressed = base64.encode(data)
-   syncTexture = textures:read("TextureSyncer",decompressed)
+
+function pings.syncTexture(data,...)
+   uvPoses = {}
+   textureSyncCount = 0
+   for i = 1, TEXTURE_SYNC_BATCH_COUNT, 1 do
+      local uvPos = ({...})[i]
+      local decompressed = base64.encode(data)
+      syncTexture = textures:read("TextureSyncer",decompressed)
+      atlasTexture:applyFunc(uvPos.x,uvPos.y,RESOLUTION,RESOLUTION,function (col, x, y)
+         return syncTexture:getPixel(x-uvPos.x+((i-1)*RESOLUTION),y-uvPos.y):mul(1,0,0,1)
+      end)
+   end
+   atlasTexture:update()
+   syncPreview:setSprite(syncPreviewSprite:setTexture(syncTexture))
+end
+
+function pings.syncSurface(side,nextFree,uvPos,pos)
    if not hasSurface(pos,side) then
       makeSurfaceRaw(side,nextFree,uvPos,pos)
    end
-   atlasTexture:applyFunc(uvPos.x,uvPos.y,RESOLUTION,RESOLUTION,function (col, x, y)
-      return syncTexture:getPixel(x-uvPos.x,y-uvPos.y):mul(1,0,0,1)
-   end)
-   atlasTexture:update()
-   syncPreview:setSprite(syncPreviewSprite:setTexture(syncTexture))
-   
 end
 
 
