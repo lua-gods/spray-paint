@@ -2,7 +2,7 @@
 
 local SURFACE_MARGIN = 0
 local RESOLUTION = 16
-local ATLAS_RESOLUTION = 2048
+local ATLAS_RESOLUTION = 128
 
 
 local GNUI = require("libraries.GNUI.main")
@@ -193,12 +193,13 @@ end
 local function setBrushRadius(radius)
    proxies = {}
    local i = 0
-   for x = -radius, radius, 1 do
-      for y = -radius, radius, 1 do
+   local r = radius * (RESOLUTION/16)
+   for x = -r, r, 1 do
+      for y = -r, r, 1 do
          local pos = vec(x,y)
-         if pos:length() < radius then
+         if pos:length() < r then
             i = i + 1
-            proxies[i] = pos / 16
+            proxies[i] = pos/RESOLUTION
          end
       end
    end
