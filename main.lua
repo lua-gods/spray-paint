@@ -2,14 +2,16 @@
 
 local SURFACE_MARGIN = 0
 local RESOLUTION = 16
-local ATLAS_RESOLUTION = 128
+local ATLAS_RESOLUTION = 256
+local keybind = keybinds:newKeybind("Draw","key.mouse.right")
 
+local zlib = require("libraries.compression.zlib")
 
 local GNUI = require("libraries.GNUI.main")
 local screen = GNUI.getScreenCanvas()
 
-local graffitiTexture = textures:newTexture("graffiti",ATLAS_RESOLUTION,ATLAS_RESOLUTION)
-local keybind = keybinds:newKeybind("Draw","key.mouse.right")
+local atlasTexture = textures:newTexture("graffiti",ATLAS_RESOLUTION,ATLAS_RESOLUTION)
+local syncTexture = textures:newTexture("TextureSyncer",RESOLUTION,RESOLUTION)
 
 local side2dir = {
    north = vec(0,0,-1),
@@ -29,13 +31,19 @@ local surfaces = {
    down = {},
 }
 
-local slots = {}
+local slots = {} ---@type table<integer,Surface>
 local proxies = {}
 
-local preview = GNUI.newContainer()
-preview:setSize(64,64)
-preview:setSprite(GNUI.newSprite():setTexture(graffitiTexture))
-screen:addChild(preview)
+local atlasPreview = GNUI.newContainer()
+atlasPreview:setSize(64,64)
+atlasPreview:setSprite(GNUI.newSprite():setTexture(atlasTexture))
+screen:addChild(atlasPreview)
+
+local syncPreview = GNUI.newContainer()
+syncPreview:setSize(32,32):setPos(80,0)
+local syncPreviewSprite = GNUI.newSprite():setTexture(syncTexture)
+syncPreview:setSprite(syncPreviewSprite)
+screen:addChild(syncPreview)
 
 local model = models:newPart("Graffiti","WORLD"):setMatrix(matrices.mat4() * 0.99):setLight(15,0)
 
@@ -47,6 +55,7 @@ local model = models:newPart("Graffiti","WORLD"):setMatrix(matrices.mat4() * 0.9
 ---@field bID string
 ---@field surfacePos Vector3
 ---@field uvPos Vector2
+---@field pos Vector3
 local Surface = {}
 Surface.__index = Surface
 
@@ -60,6 +69,8 @@ function Surface:delete()
    surfaces[self.side][self.bID] = nil
    self = nil
 end
+
+
 
 
 ---@param pos Vector3
@@ -105,6 +116,51 @@ local function toSurfaceUV(pos,side)
    end
 end
 
+--- Creates a surface with precise data
+---@param side Entity.blockSide
+---@param surfacePos Vector3
+---@param nextFree integer
+---@param bID string
+---@param uvPos Vector2
+---@param pos Vector3
+---@return Surface
+local function makeSurfaceRaw(side,surfacePos,nextFree,bID,uvPos,pos)
+   local tpos = (pos * 16 + 0.5):floor() / 16
+   local bpos = pos:floor()
+   local sprite = model:newSprite(tostring(nextFree))
+   sprite:setTexture(atlasTexture,ATLAS_RESOLUTION, ATLAS_RESOLUTION)
+   sprite:setRenderType("CUTOUT_CULL")
+   sprite:setUV(uvPos/ATLAS_RESOLUTION)
+   sprite:setRegion(RESOLUTION, RESOLUTION)
+
+   local scale = 16 / ATLAS_RESOLUTION
+
+   if side == "north" then
+sprite:scale(-scale,-scale,0):setPos(vec(bpos.x,bpos.y,tpos.z-SURFACE_MARGIN)*16)
+   elseif side == "east" then sprite:scale(scale,-scale,0):setPos(vec(tpos.x+SURFACE_MARGIN,bpos.y,bpos.z)*16):setRot(0,90,0)
+   elseif side == "south" then sprite:scale(scale,-scale,0):setPos(vec(bpos.x+1,bpos.y,tpos.z+SURFACE_MARGIN)*16)
+   elseif side == "west" then sprite:scale(-scale,-scale,0):setPos(vec(tpos.x-SURFACE_MARGIN,bpos.y,bpos.z+1)*16):setRot(0,90,0)
+   elseif side == "up" then sprite:scale(scale,scale,scale):setPos(vec(bpos.x,tpos.y+SURFACE_MARGIN,bpos.z)*16):setRot(90,180,0)
+   else --[[down]] sprite:scale(scale,scale,-scale):setPos(vec(bpos.x,tpos.y-SURFACE_MARGIN,bpos.z)*16):setRot(90,90,180)
+   end
+   
+   local surface = {
+      sprite = sprite,
+      slot = nextFree,
+      side = side,
+      surfacePos = surfacePos,
+      bID = bID,
+      uvPos = uvPos,
+      pos = pos,
+   }
+   atlasTexture:fill(uvPos.x,uvPos.y,RESOLUTION,RESOLUTION,vec(1,1,1,0))
+   atlasTexture:update()
+   setmetatable(surface,Surface)
+   slots[nextFree] = surface
+   surfaces[side][bID] = surface
+   return surface
+end
+
 local nextFree = 0
 ---@param pos Vector3
 ---@param side Entity.blockSide
@@ -116,56 +172,58 @@ local function makeSurface(pos,side)
       (nextFree*RESOLUTION)%ATLAS_RESOLUTION,
       math.floor(nextFree*RESOLUTION/ATLAS_RESOLUTION)*RESOLUTION)
       
-      if nextFree >= (ATLAS_RESOLUTION/RESOLUTION)^2 then
-         host:setActionbar("Out of graffiti slots")
-         return
-      end
-      nextFree = nextFree + 1
+   if nextFree >= (ATLAS_RESOLUTION/RESOLUTION)^2 then
+      host:setActionbar("Out of graffiti slots")
+      return
+   end
+   nextFree = nextFree + 1
    local sprite = model:newSprite(tostring(nextFree))
-   sprite:setTexture(graffitiTexture,ATLAS_RESOLUTION, ATLAS_RESOLUTION)
+   sprite:setTexture(atlasTexture,ATLAS_RESOLUTION, ATLAS_RESOLUTION)
    sprite:setRenderType("CUTOUT_CULL")
    sprite:setUV(uvPos/ATLAS_RESOLUTION)
    sprite:setRegion(RESOLUTION, RESOLUTION)
 
-   local scale = 16 / ATLAS_RESOLUTION
-
-   if side == "north" then
-      surfacePos = vec(bpos.x,bpos.y,tpos.z)
-      sprite:scale(-scale,-scale,0):setPos(vec(bpos.x,bpos.y,tpos.z-SURFACE_MARGIN)*16)
-   elseif side == "east" then
-      surfacePos = vec(tpos.x,bpos.y,bpos.z)
-      sprite:scale(scale,-scale,0):setPos(vec(tpos.x+SURFACE_MARGIN,bpos.y,bpos.z)*16):setRot(0,90,0)
-   elseif side == "south" then
-      surfacePos = vec(bpos.x,bpos.y,tpos.z)
-      sprite:scale(scale,-scale,0):setPos(vec(bpos.x+1,bpos.y,tpos.z+SURFACE_MARGIN)*16)
-   elseif side == "west" then
-      surfacePos = vec(tpos.x,bpos.y,bpos.z)
-      sprite:scale(-scale,-scale,0):setPos(vec(tpos.x-SURFACE_MARGIN,bpos.y,bpos.z+1)*16):setRot(0,90,0)
-   elseif side == "up" then
-      surfacePos = vec(bpos.x,tpos.y,bpos.z)
-      sprite:scale(scale,scale,scale):setPos(vec(bpos.x,tpos.y+SURFACE_MARGIN,bpos.z)*16):setRot(90,180,0)
-   else -- down
-      surfacePos = vec(bpos.x,tpos.y,bpos.z)
-      sprite:scale(scale,scale,-scale):setPos(vec(bpos.x,tpos.y-SURFACE_MARGIN,bpos.z)*16):setRot(90,90,180)
+   if side == "north" then surfacePos = vec(bpos.x,bpos.y,tpos.z)
+   elseif side == "east" then surfacePos = vec(tpos.x,bpos.y,bpos.z)
+   elseif side == "south" then surfacePos = vec(bpos.x,bpos.y,tpos.z)
+   elseif side == "west" then surfacePos = vec(tpos.x,bpos.y,bpos.z)
+   elseif side == "up" then surfacePos = vec(bpos.x,tpos.y,bpos.z)
+   else --[[down]] surfacePos = vec(bpos.x,tpos.y,bpos.z)
    end
    
-   id = surfacePos.x..","..surfacePos.y..","..surfacePos.z
+   id = surfacePos.x .. "," .. surfacePos.y .. "," .. surfacePos.z
    
-   local surface = {
-      sprite = sprite,
-      slot = nextFree,
-      slots = slots,
-      side = side,
-      surfacePos = surfacePos,
-      bID = id,
-      uvPos = uvPos,
-   }
-   graffitiTexture:fill(uvPos.x,uvPos.y,RESOLUTION,RESOLUTION,vec(1,1,1,0))
-   graffitiTexture:update()
-   setmetatable(surface,Surface)
-   surfaces[side][id] = surface
+   local surface = makeSurfaceRaw(side,surfacePos,nextFree,id,uvPos,pos)
    return surface
 end
+
+
+
+function Surface:sync()
+   local o = self.uvPos
+   syncTexture:applyFunc(0,0,RESOLUTION,RESOLUTION,function (col, x, y)
+      return atlasTexture:getPixel(o.x+x,o.y+y)
+   end)
+   
+   local data = zlib.Zlib.Compress(syncTexture:save())
+   pings.syncSurface(data, self.side, self.surfacePos, self.slot, self.bID, self.uvPos, self.pos)
+   return #data
+end
+
+function pings.syncSurface(data,side,surfacePos,nextFree,bID,uvPos,pos)
+   syncTexture = textures:read("TextureSyncer",zlib.Zlib.Decompress(data))
+   if not hasSurface(pos,side) then
+      makeSurfaceRaw(side,surfacePos,nextFree,bID,uvPos,pos)
+   end
+   atlasTexture:applyFunc(uvPos.x,uvPos.y,RESOLUTION,RESOLUTION,function (col, x, y)
+      return syncTexture:getPixel(x-uvPos.x,y-uvPos.y):mul(1,0,0,1)
+   end)
+   atlasTexture:update()
+   syncPreview:setSprite(syncPreviewSprite:setTexture(syncTexture))
+   
+end
+
+
 
 
 ---@param pos Vector3
@@ -184,7 +242,7 @@ local function draw(pos,side,color)
    local surface = getSurface(pos,side)
    if surface then
       local penPos = surface.uvPos:copy() + toSurfaceUV(pos,side)
-      graffitiTexture:setPixel(penPos.x,penPos.y,color)
+      atlasTexture:setPixel(penPos.x,penPos.y,color)
    end
 end
 
@@ -237,6 +295,36 @@ events.WORLD_RENDER:register(function(dt)
          end
       end
    end
-   graffitiTexture:update()
+   atlasTexture:update()
 end)
 
+-->========================================[ Syncing ]=========================================<--
+
+local syncSize = 0
+local syncThreshold = 512
+local syncNext
+local syncingCurrent ---@type Surface
+
+local timeSinceSync = 0
+local lastSystemTime = client:getSystemTime()
+events.WORLD_RENDER:register(function ()
+   local systemTime = client:getSystemTime()
+   local delta = (systemTime - lastSystemTime) / 1000
+   lastSystemTime = systemTime
+   
+   timeSinceSync = timeSinceSync + delta
+   if timeSinceSync > 1 then
+      timeSinceSync = 0
+      syncSize = 0
+   end
+   
+   if not syncingCurrent then
+      syncNext,syncingCurrent = next(slots,syncNext)
+   end
+   
+   if syncingCurrent and syncSize < syncThreshold then
+      local size = syncingCurrent:sync()
+      syncSize = syncSize + size
+      syncingCurrent = nil
+   end
+end)
