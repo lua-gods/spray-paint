@@ -2,11 +2,10 @@
 
 local SURFACE_MARGIN = 0
 local RESOLUTION = 16
-local ATLAS_RESOLUTION = 256
+local ATLAS_RESOLUTION = 512
 local keybind = keybinds:newKeybind("Draw","key.mouse.right")
 
-local zlib = require("libraries.compression.zlib")
-
+local base64 = require("libraries.base64")
 local GNUI = require("libraries.GNUI.main")
 local screen = GNUI.getScreenCanvas()
 
@@ -118,16 +117,25 @@ end
 
 --- Creates a surface with precise data
 ---@param side Entity.blockSide
----@param surfacePos Vector3
 ---@param nextFree integer
----@param bID string
 ---@param uvPos Vector2
 ---@param pos Vector3
 ---@return Surface
-local function makeSurfaceRaw(side,surfacePos,nextFree,bID,uvPos,pos)
+local function makeSurfaceRaw(side,nextFree,uvPos,pos)
    local tpos = (pos * 16 + 0.5):floor() / 16
    local bpos = pos:floor()
    local sprite = model:newSprite(tostring(nextFree))
+   
+   local surfacePos
+   if side == "north" then surfacePos = vec(bpos.x,bpos.y,tpos.z)
+   elseif side == "east" then surfacePos = vec(tpos.x,bpos.y,bpos.z)
+   elseif side == "south" then surfacePos = vec(bpos.x,bpos.y,tpos.z)
+   elseif side == "west" then surfacePos = vec(tpos.x,bpos.y,bpos.z)
+   elseif side == "up" then surfacePos = vec(bpos.x,tpos.y,bpos.z)
+   else --[[down]] surfacePos = vec(bpos.x,tpos.y,bpos.z)
+   end
+   
+   local bID = surfacePos.x .. "," .. surfacePos.y .. "," .. surfacePos.z
    sprite:setTexture(atlasTexture,ATLAS_RESOLUTION, ATLAS_RESOLUTION)
    sprite:setRenderType("CUTOUT_CULL")
    sprite:setUV(uvPos/ATLAS_RESOLUTION)
@@ -182,18 +190,8 @@ local function makeSurface(pos,side)
    sprite:setRenderType("CUTOUT_CULL")
    sprite:setUV(uvPos/ATLAS_RESOLUTION)
    sprite:setRegion(RESOLUTION, RESOLUTION)
-
-   if side == "north" then surfacePos = vec(bpos.x,bpos.y,tpos.z)
-   elseif side == "east" then surfacePos = vec(tpos.x,bpos.y,bpos.z)
-   elseif side == "south" then surfacePos = vec(bpos.x,bpos.y,tpos.z)
-   elseif side == "west" then surfacePos = vec(tpos.x,bpos.y,bpos.z)
-   elseif side == "up" then surfacePos = vec(bpos.x,tpos.y,bpos.z)
-   else --[[down]] surfacePos = vec(bpos.x,tpos.y,bpos.z)
-   end
    
-   id = surfacePos.x .. "," .. surfacePos.y .. "," .. surfacePos.z
-   
-   local surface = makeSurfaceRaw(side,surfacePos,nextFree,id,uvPos,pos)
+   local surface = makeSurfaceRaw(side,nextFree,uvPos,pos)
    return surface
 end
 
@@ -205,15 +203,16 @@ function Surface:sync()
       return atlasTexture:getPixel(o.x+x,o.y+y)
    end)
    
-   local data = zlib.Zlib.Compress(syncTexture:save())
+   local data = base64.decode(syncTexture:save())
    pings.syncSurface(data, self.side, self.surfacePos, self.slot, self.bID, self.uvPos, self.pos)
    return #data
 end
 
 function pings.syncSurface(data,side,surfacePos,nextFree,bID,uvPos,pos)
-   syncTexture = textures:read("TextureSyncer",zlib.Zlib.Decompress(data))
+   local decompressed = base64.encode(data)
+   syncTexture = textures:read("TextureSyncer",decompressed)
    if not hasSurface(pos,side) then
-      makeSurfaceRaw(side,surfacePos,nextFree,bID,uvPos,pos)
+      makeSurfaceRaw(side,nextFree,uvPos,pos)
    end
    atlasTexture:applyFunc(uvPos.x,uvPos.y,RESOLUTION,RESOLUTION,function (col, x, y)
       return syncTexture:getPixel(x-uvPos.x,y-uvPos.y):mul(1,0,0,1)
@@ -263,7 +262,7 @@ local function setBrushRadius(radius)
    end
 end
 
-setBrushRadius(8)
+setBrushRadius(4)
 
 -->====================[ Drawing ]====================<--
 
@@ -301,7 +300,7 @@ end)
 -->========================================[ Syncing ]=========================================<--
 
 local syncSize = 0
-local syncThreshold = 512
+local syncThreshold = 900
 local syncNext
 local syncingCurrent ---@type Surface
 
