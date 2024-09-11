@@ -1,0 +1,63 @@
+local GNUI = require("libraries.GNUI.main")
+local screen = GNUI.getScreenCanvas()
+
+local graffitiTexture = textures:newTexture("graffiti",64,64)
+local surfaces = {}
+
+local preview = GNUI.newContainer()
+preview:setSize(64,64)
+--preview:setSprite(GNUI.newSprite(graffitiTexture))
+screen:addChild(preview)
+
+local cube = models:newPart("lmao","WORLD"):light(15,15)
+cube:newBlock("Preview"):block("minecraft:white_stained_glass"):scale(1.02,1.02,1.02):pos(-0.01,-0.01,-0.01)
+
+models:newPart("t","WORLD"):newSprite("q"):setRenderType("EMISSIVE_SOLID"):setTexture(graffitiTexture,64,64)
+
+-->====================[ Surface ]====================<--
+
+---@param AABB {[1]:Vector3,[2]:Vector3}
+---@param side Entity.blockSide
+local function getSurfaceDetails(AABB,side)
+   local from,to = AABB[1],AABB[2] -- from is the lowest coordinate, to is the highest
+   if side == "north" then
+      return vec(from.x,from.y,to.x,to.y),from.z
+   elseif side == "south" then
+      return vec(to.x,from.y,from.x,to.y),to.z
+   elseif side == "east" then
+      return vec(from.z,from.y,to.z,to.y),to.x
+   end
+end
+
+---@param blockPos Vector3
+---@param side Entity.blockSide
+---@param height integer # the height of the surface
+---@param dimensions Vector4 # the offset from the block, tangental to the side
+local function makeSurface(blockPos,side,height,dimensions)
+   
+end
+
+-->====================[ Drawing ]====================<--
+
+---@param pos Vector3
+---@param dir Vector3
+---@param clr Vector3
+local function shoot(pos,dir,clr)
+   local block = raycast:block(pos, pos + dir * 10, "COLLIDER", "NONE")
+   pos:sub(block:getPos())
+   local collision = block:getOutlineShape()
+   local babab, hit, side, index  = raycast:aabb(pos, pos + dir * 10, collision)
+   if babab then
+      cube:setPos((babab[1] + block:getPos()) * 16):scale(babab[2]-babab[1])
+   end
+   if side == "up" then
+   end
+end
+
+
+events.WORLD_RENDER:register(function(dt)
+   if player:isLoaded() then
+      shoot(player:getPos(dt):add(0,player:getEyeHeight()),player:getLookDir(),vec(1,1,1))
+   end
+end)
+

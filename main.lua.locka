@@ -1,0 +1,128 @@
+local offset = vec(8180064,72,8183435)
+local resolution = vec(32,32):sub(1,1)
+
+
+---@type Vector2[]
+local boxes = {
+  
+}
+
+for i = 1, 100, 1 do
+  boxes[i] = vec(math.random(0,4),math.random(0,4))
+end
+
+local blocks = client.getRegistry("minecraft:block")
+local solidBlocks = {}
+for _, id in pairs(blocks) do
+  local block = world.newBlock(id)
+  if block:isOpaque() and block:isFullCube() and not block.id:find("powder") and not block.id:find("sand") then
+    solidBlocks[#solidBlocks+1] = id
+  end
+end
+table.sort(solidBlocks)
+
+
+---@type {box: Vector4, slots: integer[]}[]
+local placedBoxes = {}
+
+local function clearArea()
+  host:sendChatCommand(("/fill %i %i %i %i %i %i barrier"):format(offset.x-8,offset.y-8,offset.z,offset.x+resolution.x+8,offset.y+resolution.y+8,offset.z))
+  host:sendChatCommand(("/fill %i %i %i %i %i %i air"):format(offset.x-8,offset.y-8,offset.z,offset.x+resolution.x+8,offset.y+resolution.y+8,offset.z))
+end
+
+
+local function redrawBoxes()
+  clearArea()
+  for i,box in pairs(placedBoxes) do
+    local b = box.box
+    host:sendChatCommand(("/fill %i %i %i %i %i %i %s"):format(
+    offset.x+b.x,
+    offset.y+b.y,
+    offset.z,
+    offset.x+b.x+b.z,
+    offset.y+b.y+b.w,
+    offset.z,solidBlocks[i]))
+  end
+end
+
+---@type fun(box:Vector4,size:Vector2)[]
+local checks = {
+  function (box,size) return vec(box.x+box.z+1, box.y) end, -- left bottom
+  function (box,size) return vec(box.x+box.z+1, box.y+box.w-size.y) end, -- left top
+  
+  function (box,size) return vec(box.x, box.y+box.w+1) end, -- top left
+  function (box,size) return vec(box.x+box.z-size.x, box.y+box.w+1) end, -- top right
+}
+
+---@alias PlacementSlots integer
+---| 1 # left bottom
+---| 2 # left top
+---| 3 # top left
+---| 4 # top left
+---| 5 # right top
+---| 6 # right bottom
+---| 7 # bottom left
+---| 8 # bottom right
+
+local function isInbounds(boxA)
+  return boxA.xy >= vec(0,0)
+  and boxA.xy+boxA.zw <= resolution
+end
+
+---Vector4 is pos and size
+---@param boxA Vector4
+---@param boxB Vector4
+local function isIntersecting(boxA, boxB)
+  return (boxA.xy <= boxB.xy+boxB.zw 
+  and boxA.xy+boxA.zw >= boxB.xy)
+end
+
+---@param box Vector4
+---@return boolean
+local function isCollidingWithBoxes(box)
+  for i, b in pairs(placedBoxes) do
+    if isIntersecting(box,b.box) or not isInbounds(box) then
+      return true
+    end
+  end
+  return false
+end
+
+
+local pos 
+local step = 0
+keybinds:newKeybind("step","key.keyboard.g"):onPress(function ()
+  step = step + 1
+  host:setActionbar("Step "..step,true)
+  
+  local box = boxes[1]
+  if #placedBoxes == 0 then -- always first box at corner
+    placedBoxes[1] = {
+      box = vec(0,0,box.x,box.y),
+      slots = {1,2,3,4} --
+    }
+  else
+    local placed = false
+    local queuedBox = boxes[1]
+    for _, placedBox in pairs(placedBoxes) do
+      for placementIndex, _ in pairs(placedBox.slots) do
+        local checkPos = checks[placementIndex](placedBox.box,box)
+        if not isCollidingWithBoxes(vec(checkPos.x,checkPos.y,queuedBox.x,queuedBox.y)) then
+          local t = {
+            box = vec(checkPos.x,checkPos.y,queuedBox.x,queuedBox.y),
+            slots = {1,2,3,4}
+          }
+          t.slots[placementIndex] = nil
+          placedBoxes[#placedBoxes+1] = t
+          placed = true
+          break
+        end
+      end
+      if placed then break end
+    end
+  end
+  table.remove(boxes,1) -- remove placed
+  redrawBoxes()
+end)
+
+clearArea()
