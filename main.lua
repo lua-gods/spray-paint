@@ -20,8 +20,6 @@ local side2dir = {
    down = vec(0,-1,0)
 }
 
-graffitiTexture:update()
-
 local surfaces = {
    north = {},
    east = {},
@@ -30,7 +28,9 @@ local surfaces = {
    up = {},
    down = {},
 }
+
 local slots = {}
+local proxies = {}
 
 local preview = GNUI.newContainer()
 preview:setSize(64,64)
@@ -189,6 +189,24 @@ local function draw(pos,side,color,radius)
    end
 end
 
+-->====================[ Brush ]====================<--
+
+local function setBrushRadius(radius)
+   proxies = {}
+   local i = 0
+   for x = -radius, radius, 1 do
+      for y = -radius, radius, 1 do
+         local pos = vec(x,y)
+         if pos:length() < radius then
+            i = i + 1
+            proxies[i] = pos / 16
+         end
+      end
+   end
+end
+
+setBrushRadius(20)
+
 -->====================[ Drawing ]====================<--
 
 events.WORLD_RENDER:register(function(dt)
@@ -199,14 +217,9 @@ events.WORLD_RENDER:register(function(dt)
       local block,hit,side = raycast:block(pos, pos + dir * 20, "COLLIDER", "NONE")
       if block.id ~= "minecraft:air" then
          if keybind:isPressed() then
-            local r = 8
-            for x = -r, r, 1 do
-               for y = -r, r, 1 do
-                  local offset = vec(x,0,y) / 16
-                  if offset:length() < r/16 then
-                     draw(hit+offset,side,vec(1,1,1),1)
-                  end
-               end
+            for i = 1, #proxies, 1 do
+               local offset = proxies[i].x_y
+               draw(hit+offset,side,vec(1,1,1),1)
             end
          end
       end
