@@ -2,7 +2,7 @@
 
 local SURFACE_MARGIN = 0
 local RESOLUTION = 16
-local ATLAS_RESOLUTION = 256
+local ATLAS_RESOLUTION = 2048
 
 
 local GNUI = require("libraries.GNUI.main")
@@ -122,29 +122,31 @@ local function makeSurface(pos,side)
       end
       nextFree = nextFree + 1
    local sprite = model:newSprite(tostring(nextFree))
-   sprite:setTexture(graffitiTexture,16,16)
+   sprite:setTexture(graffitiTexture,ATLAS_RESOLUTION, ATLAS_RESOLUTION)
    sprite:setRenderType("CUTOUT_CULL")
    sprite:setUV(uvPos/ATLAS_RESOLUTION)
-   sprite:setRegion(16/RESOLUTION,16/RESOLUTION)
-   
+   sprite:setRegion(RESOLUTION, RESOLUTION)
+
+   local scale = 16 / ATLAS_RESOLUTION
+
    if side == "north" then
       surfacePos = vec(bpos.x,bpos.y,tpos.z)
-      sprite:scale(-1,-1,0):setPos(vec(bpos.x,bpos.y,tpos.z-SURFACE_MARGIN)*16)
+      sprite:scale(-scale,-scale,0):setPos(vec(bpos.x,bpos.y,tpos.z-SURFACE_MARGIN)*16)
    elseif side == "east" then
       surfacePos = vec(tpos.x,bpos.y,bpos.z)
-      sprite:scale(1,-1,0):setPos(vec(tpos.x+SURFACE_MARGIN,bpos.y,bpos.z)*16):setRot(0,90,0)
+      sprite:scale(scale,-scale,0):setPos(vec(tpos.x+SURFACE_MARGIN,bpos.y,bpos.z)*16):setRot(0,90,0)
    elseif side == "south" then
       surfacePos = vec(bpos.x,bpos.y,tpos.z)
-      sprite:scale(1,-1,0):setPos(vec(bpos.x+1,bpos.y,tpos.z+SURFACE_MARGIN)*16)
+      sprite:scale(scale,-scale,0):setPos(vec(bpos.x+1,bpos.y,tpos.z+SURFACE_MARGIN)*16)
    elseif side == "west" then
       surfacePos = vec(tpos.x,bpos.y,bpos.z)
-      sprite:scale(-1,-1,0):setPos(vec(tpos.x-SURFACE_MARGIN,bpos.y,bpos.z+1)*16):setRot(0,90,0)
+      sprite:scale(-scale,-scale,0):setPos(vec(tpos.x-SURFACE_MARGIN,bpos.y,bpos.z+1)*16):setRot(0,90,0)
    elseif side == "up" then
       surfacePos = vec(bpos.x,tpos.y,bpos.z)
-      sprite:scale(1,1,1):setPos(vec(bpos.x,tpos.y+SURFACE_MARGIN,bpos.z)*16):setRot(90,180,0)
+      sprite:scale(scale,scale,scale):setPos(vec(bpos.x,tpos.y+SURFACE_MARGIN,bpos.z)*16):setRot(90,180,0)
    else -- down
       surfacePos = vec(bpos.x,tpos.y,bpos.z)
-      sprite:scale(1,1,-1):setPos(vec(bpos.x,tpos.y-SURFACE_MARGIN,bpos.z)*16):setRot(90,90,180)
+      sprite:scale(scale,scale,-scale):setPos(vec(bpos.x,tpos.y-SURFACE_MARGIN,bpos.z)*16):setRot(90,90,180)
    end
    
    id = surfacePos.x..","..surfacePos.y..","..surfacePos.z
