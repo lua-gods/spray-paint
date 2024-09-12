@@ -2,7 +2,7 @@
 
 local SURFACE_MARGIN = 0
 local RESOLUTION = 16
-local ATLAS_RESOLUTION = 512
+local ATLAS_RESOLUTION = 2048
 
 local keybind = keybinds:newKeybind("Draw","key.mouse.right",true)
 
@@ -273,11 +273,13 @@ function pings.syncSurface(data,side,surfacePos,nextFree,bID,uvPos,pos)
    if not hasSurface(pos,side) then
       makeSurfaceRaw(side,nextFree,uvPos,pos)
    end
-   getSurface(pos,side).sprite:setRenderType("CUTOUT_CULL"):setColor(1,1,1)
-   atlasTexture:applyFunc(uvPos.x,uvPos.y,RESOLUTION,RESOLUTION,function (col, x, y)
-      return syncTexture:getPixel(x-uvPos.x,y-uvPos.y)
-   end)
-   atlasTexture:update()
+   getSurface(pos,side).sprite:setRenderType("TRANSLUCENT_CULL"):setColor(1,1,1)
+   if not host:isHost() then
+      atlasTexture:applyFunc(uvPos.x,uvPos.y,RESOLUTION,RESOLUTION,function (col, x, y)
+         return syncTexture:getPixel(x-uvPos.x,y-uvPos.y)
+      end)
+      atlasTexture:update()
+   end
    syncPreview:setSprite(syncPreviewSprite:setTexture(syncTexture))
    
 end
@@ -304,7 +306,7 @@ local function draw(pos,side,color)
       if priority[1] ~= surface.slot then
          surface:makePriority()
       end
-      surface.sprite:setRenderType("EMISSIVE"):setColor(0.5,0.5,0.5)
+      surface.sprite:setRenderType("TRANSLUCENT_CULL"):setColor(0.9,0.9,0.9)
       local penPos = surface.uvPos + toSurfaceUV(pos,side)
       atlasTexture:setPixel(penPos.x,penPos.y,color)
    end
@@ -360,11 +362,10 @@ end
 if not host:isHost() then return end
 
 
-
 keybind.release = function () lastHit = nil end
 events.WORLD_RENDER:register(function(dt)
    if player:isLoaded() and keybind:isPressed() then
-      if host:isChatOpen() then
+      if host:isCursorUnlocked() then
          local mat = matrices.mat4()
          local crot = client:getCameraRot()
          local res = client:getWindowSize()
@@ -389,3 +390,17 @@ events.WORLD_RENDER:register(function(dt)
    atlasTexture:update()
 end)
 
+-->========================================[ User Interface ]=========================================<--
+
+local actionWheel = keybinds:fromVanilla("figura.config.action_wheel_button")
+
+actionWheel.press = function ()
+   host:setUnlockCursor(true)
+   renderer:setRenderCrosshair(false)
+   return true
+end
+
+actionWheel.release = function ()
+   host:setUnlockCursor(false)
+   renderer:setRenderCrosshair(true)
+end
