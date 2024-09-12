@@ -3,7 +3,8 @@
 local SURFACE_MARGIN = 0
 local RESOLUTION = 16
 local ATLAS_RESOLUTION = 512
-local keybind = keybinds:newKeybind("Draw","key.mouse.right")
+
+local keybind = keybinds:newKeybind("Draw","key.mouse.right",true)
 
 local base64 = require("libraries.base64")
 local GNUI = require("libraries.GNUI.main")
@@ -161,7 +162,7 @@ sprite:scale(-scale,-scale,0):setPos(vec(bpos.x,bpos.y,tpos.z-SURFACE_MARGIN)*16
       uvPos = uvPos,
       pos = pos,
    }
-   atlasTexture:fill(uvPos.x,uvPos.y,RESOLUTION,RESOLUTION,vec(1,1,1,0))
+   atlasTexture:fill(uvPos.x,uvPos.y,RESOLUTION,RESOLUTION,vec(0,0,0,0))
    atlasTexture:update()
    setmetatable(surface,Surface)
    slots[nextFree] = surface
@@ -272,8 +273,9 @@ function pings.syncSurface(data,side,surfacePos,nextFree,bID,uvPos,pos)
    if not hasSurface(pos,side) then
       makeSurfaceRaw(side,nextFree,uvPos,pos)
    end
+   getSurface(pos,side).sprite:setRenderType("CUTOUT_CULL"):setColor(1,1,1)
    atlasTexture:applyFunc(uvPos.x,uvPos.y,RESOLUTION,RESOLUTION,function (col, x, y)
-      return syncTexture:getPixel(x-uvPos.x,y-uvPos.y):mul(1,0,0,1)
+      return syncTexture:getPixel(x-uvPos.x,y-uvPos.y)
    end)
    atlasTexture:update()
    syncPreview:setSprite(syncPreviewSprite:setTexture(syncTexture))
@@ -300,6 +302,7 @@ local function draw(pos,side,color)
    local surface = getSurface(pos,side)
    if surface then
       surface:makePriority()
+      surface.sprite:setRenderType("EMISSIVE"):setColor(0.5,0.5,0.5)
       local penPos = surface.uvPos:copy() + toSurfaceUV(pos,side)
       atlasTexture:setPixel(penPos.x,penPos.y,color)
    end
@@ -323,34 +326,60 @@ local function setBrushRadius(radius)
 end
 
 setBrushRadius(4)
+local lastHit
+local function brush(pos,side)
+   for i = 1, #proxies, 1 do -- rotate brush to face the surface
+      local offset = proxies[i]
+      if side == "north" then
+         offset = offset.xy_:mul(-1,1)
+      elseif side == "east" then
+         offset = offset._yx:mul(0,1,-1)
+      elseif side == "south" then
+         offset = offset.xy_
+      elseif side == "west" then
+         offset = offset._yx
+      elseif side == "up" then
+         offset = offset.x_y:mul(1,0,1)
+      else
+         offset = offset.x_y:mul(1,0,1)
+      end
+      local count = math.max(math.floor(((lastHit or pos)-pos):length()*RESOLUTION/2),1)
+      for i = 1, count, 1 do
+         draw(math.lerp((lastHit or pos),pos,i/count)+offset,side,vec(1,1,1))
+      end
+   end
+   lastHit = pos
+end
 
 -->====================[ Drawing ]====================<--
 
+if not host:isHost() then return end
+
+
+
+keybind.release = function () lastHit = nil end
 events.WORLD_RENDER:register(function(dt)
-   if player:isLoaded() then
-      local pos = player:getPos(dt):add(0,player:getEyeHeight())
-      local dir = player:getLookDir()
-      local block,hit,side = raycast:block(pos, pos + dir * 20, "COLLIDER", "NONE")
-      if block.id ~= "minecraft:air" then
-         if keybind:isPressed() then
-            for i = 1, #proxies, 1 do -- rotate brush to face the surface
-               local offset = proxies[i]
-               if side == "north" then
-                  offset = offset.xy_:mul(-1,1)
-               elseif side == "east" then
-                  offset = offset._yx:mul(0,1,-1)
-               elseif side == "south" then
-                  offset = offset.xy_
-               elseif side == "west" then
-                  offset = offset._yx
-               elseif side == "up" then
-                  offset = offset.x_y:mul(1,0,1)
-               else
-                  offset = offset.x_y:mul(1,0,1)
-               end
-               draw(hit+offset,side,vec(1,1,1))
-            end
-         end
+   if player:isLoaded() and keybind:isPressed() then
+      if host:isChatOpen() then
+         local mat = matrices.mat4()
+         local crot = client:getCameraRot()
+         local res = client:getWindowSize()
+         local mpos = ((client:getMousePos() / res.xy) - 0.5) * vec(res.x / res.y,1) * 2
+         local FOV = client:getFOV()/90
+         mat:rotateX(crot.x):rotateY(-crot.y)
+         mat:translate(client:getCameraPos())
+         local block,hit,side = raycast:block(
+         mat.c4.xyz,
+         mat.c4.xyz + (mat.c3.xyz 
+         - mat.c2.xyz * FOV * mpos.y
+         - mat.c1.xyz * FOV * mpos.x) * 20
+         , "COLLIDER", "NONE")
+         brush(hit,side)
+      else
+         local pos = player:getPos(dt):add(0,player:getEyeHeight())
+         local dir = player:getLookDir()
+         local block,hit,side = raycast:block(pos, pos + dir * 20, "COLLIDER", "NONE")
+         brush(hit,side)
       end
    end
    atlasTexture:update()
