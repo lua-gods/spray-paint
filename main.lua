@@ -5,14 +5,12 @@ local RESOLUTION = 16
 local ATLAS_RESOLUTION = 512
 local keybind = keybinds:newKeybind("Draw","key.mouse.right")
 
-local TEXTURE_SYNC_BATCH_COUNT = 2
-
 local base64 = require("libraries.base64")
 local GNUI = require("libraries.GNUI.main")
 local screen = GNUI.getScreenCanvas()
 
 local atlasTexture = textures:newTexture("graffiti",ATLAS_RESOLUTION,ATLAS_RESOLUTION)
-local syncTexture = textures:newTexture("TextureSyncer",RESOLUTION*TEXTURE_SYNC_BATCH_COUNT,RESOLUTION)
+local syncTexture = textures:newTexture("TextureSyncer",RESOLUTION,RESOLUTION)
 
 local side2dir = {
    north = vec(0,0,-1),
@@ -41,7 +39,7 @@ atlasPreview:setSprite(GNUI.newSprite():setTexture(atlasTexture))
 screen:addChild(atlasPreview)
 
 local syncPreview = GNUI.newContainer()
-syncPreview:setSize(32*TEXTURE_SYNC_BATCH_COUNT,32):setPos(80,0)
+syncPreview:setSize(32,32):setPos(80,0)
 local syncPreviewSprite = GNUI.newSprite():setTexture(syncTexture)
 syncPreview:setSprite(syncPreviewSprite)
 screen:addChild(syncPreview)
@@ -197,49 +195,93 @@ local function makeSurface(pos,side)
    return surface
 end
 
+-->========================================[ Syncing ]=========================================<--
 
-local textureSyncCount = 0
-local uvPoses = {}
-function Surface:sync()
-   textureSyncCount = textureSyncCount + 1
-   local syncTextureOffset = (textureSyncCount-1)*RESOLUTION
-   local o = self.uvPos
-   syncTexture:applyFunc(syncTextureOffset,0,RESOLUTION,RESOLUTION,function (col, x, y)
-      return atlasTexture:getPixel(o.x+x-syncTextureOffset,o.y+y)
-   end)
-   syncTexture:update()
-   local data = base64.decode(syncTexture:save())
-   uvPoses[#uvPoses+1] = self.uvPos
-   if textureSyncCount == TEXTURE_SYNC_BATCH_COUNT then
-      pings.syncTexture(data, table.unpack(uvPoses))
+local syncSize = 0
+local syncThreshold = 900
+local syncNext
+local syncingCurrent ---@type Surface
+local priority = {}
+local inversePriority = {}
+
+local timeSinceSync = 0
+local lastSystemTime = client:getSystemTime()
+events.WORLD_RENDER:register(function ()
+   local systemTime = client:getSystemTime()
+   local delta = (systemTime - lastSystemTime) / 1000
+   lastSystemTime = systemTime
+   
+   timeSinceSync = timeSinceSync + delta
+   if timeSinceSync > 1 then
+      timeSinceSync = 0
+      syncSize = 0
    end
-   pings.syncSurface(self.side, nextFree, self.uvPos, self.pos)
+   
+   if not syncingCurrent then
+      if #priority > 0 then
+         syncingCurrent = table.remove(priority)
+         syncingCurrent:removePriority()
+      else
+         syncNext,syncingCurrent = next(slots,syncNext)
+      end
+   end
+   
+   if syncingCurrent and syncSize < syncThreshold then
+      local size = syncingCurrent:sync()
+      syncSize = syncSize + size
+      syncingCurrent = nil
+   end
+end)
+
+local function updatePriority()
+   inversePriority = {}
+   for key, value in pairs(priority) do
+      inversePriority[value.slot] = key
+   end
+end
+
+function Surface:makePriority()
+   if inversePriority[self.slot] then
+      table.remove(priority,inversePriority[self.slot])
+   end
+   table.insert(priority,1,self)
+   updatePriority()
+end
+
+function Surface:removePriority()
+   if inversePriority[self.slot] then
+      table.remove(priority,inversePriority[self.slot])
+   end
+   updatePriority()
+end
+
+function Surface:sync()
+   local o = self.uvPos
+   syncTexture:applyFunc(0,0,RESOLUTION,RESOLUTION,function (col, x, y)
+      return atlasTexture:getPixel(o.x+x,o.y+y)
+   end)
+   
+   local data = base64.decode(syncTexture:save())
+   pings.syncSurface(data, self.side, self.surfacePos, self.slot, self.bID, self.uvPos, self.pos)
    return #data
 end
 
-
-function pings.syncTexture(data,...)
-   uvPoses = {}
-   textureSyncCount = 0
-   for i = 1, TEXTURE_SYNC_BATCH_COUNT, 1 do
-      local uvPos = ({...})[i]
-      local decompressed = base64.encode(data)
-      syncTexture = textures:read("TextureSyncer",decompressed)
-      atlasTexture:applyFunc(uvPos.x,uvPos.y,RESOLUTION,RESOLUTION,function (col, x, y)
-         return syncTexture:getPixel(x-uvPos.x+((i-1)*RESOLUTION),y-uvPos.y):mul(1,0,0,1)
-      end)
-   end
-   atlasTexture:update()
-   syncPreview:setSprite(syncPreviewSprite:setTexture(syncTexture))
-end
-
-function pings.syncSurface(side,nextFree,uvPos,pos)
+function pings.syncSurface(data,side,surfacePos,nextFree,bID,uvPos,pos)
+   local decompressed = base64.encode(data)
+   syncTexture = textures:read("TextureSyncer",decompressed)
    if not hasSurface(pos,side) then
       makeSurfaceRaw(side,nextFree,uvPos,pos)
    end
+   atlasTexture:applyFunc(uvPos.x,uvPos.y,RESOLUTION,RESOLUTION,function (col, x, y)
+      return syncTexture:getPixel(x-uvPos.x,y-uvPos.y):mul(1,0,0,1)
+   end)
+   atlasTexture:update()
+   syncPreview:setSprite(syncPreviewSprite:setTexture(syncTexture))
+   
 end
 
 
+-->========================================[ Drawing ]=========================================<--
 
 
 ---@param pos Vector3
@@ -257,6 +299,7 @@ local function draw(pos,side,color)
    end
    local surface = getSurface(pos,side)
    if surface then
+      surface:makePriority()
       local penPos = surface.uvPos:copy() + toSurfaceUV(pos,side)
       atlasTexture:setPixel(penPos.x,penPos.y,color)
    end
@@ -287,11 +330,10 @@ events.WORLD_RENDER:register(function(dt)
    if player:isLoaded() then
       local pos = player:getPos(dt):add(0,player:getEyeHeight())
       local dir = player:getLookDir()
-      
       local block,hit,side = raycast:block(pos, pos + dir * 20, "COLLIDER", "NONE")
       if block.id ~= "minecraft:air" then
          if keybind:isPressed() then
-            for i = 1, #proxies, 1 do
+            for i = 1, #proxies, 1 do -- rotate brush to face the surface
                local offset = proxies[i]
                if side == "north" then
                   offset = offset.xy_:mul(-1,1)
@@ -314,33 +356,3 @@ events.WORLD_RENDER:register(function(dt)
    atlasTexture:update()
 end)
 
--->========================================[ Syncing ]=========================================<--
-
-local syncSize = 0
-local syncThreshold = 900
-local syncNext
-local syncingCurrent ---@type Surface
-
-local timeSinceSync = 0
-local lastSystemTime = client:getSystemTime()
-events.WORLD_RENDER:register(function ()
-   local systemTime = client:getSystemTime()
-   local delta = (systemTime - lastSystemTime) / 1000
-   lastSystemTime = systemTime
-   
-   timeSinceSync = timeSinceSync + delta
-   if timeSinceSync > 1 then
-      timeSinceSync = 0
-      syncSize = 0
-   end
-   
-   if not syncingCurrent then
-      syncNext,syncingCurrent = next(slots,syncNext)
-   end
-   
-   if syncingCurrent and syncSize < syncThreshold then
-      local size = syncingCurrent:sync()
-      syncSize = syncSize + size
-      syncingCurrent = nil
-   end
-end)
