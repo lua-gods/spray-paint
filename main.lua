@@ -106,7 +106,7 @@ end
 ---@param side Entity.blockSide
 local function toSurfaceUV(pos,side)
    local o = RESOLUTION - 1
-   pos = ((pos - pos:floor()) * RESOLUTION):floor()
+   pos = ((pos % 1) * RESOLUTION):floor()
    if side == "north" then return vec(pos.x,pos.y)
    elseif side == "east" then return vec(pos.z,pos.y)
    elseif side == "south" then return vec(o-pos.x,pos.y)
@@ -301,9 +301,11 @@ local function draw(pos,side,color)
    end
    local surface = getSurface(pos,side)
    if surface then
-      surface:makePriority()
+      if priority[1] ~= surface.slot then
+         surface:makePriority()
+      end
       surface.sprite:setRenderType("EMISSIVE"):setColor(0.5,0.5,0.5)
-      local penPos = surface.uvPos:copy() + toSurfaceUV(pos,side)
+      local penPos = surface.uvPos + toSurfaceUV(pos,side)
       atlasTexture:setPixel(penPos.x,penPos.y,color)
    end
 end
@@ -344,8 +346,10 @@ local function brush(pos,side)
          offset = offset.x_y:mul(1,0,1)
       end
       local count = math.max(math.floor(((lastHit or pos)-pos):length()*RESOLUTION/2),1)
-      for i = 1, count, 1 do
-         draw(math.lerp((lastHit or pos),pos,i/count)+offset,side,vec(1,1,1))
+      if lastHit ~= pos then
+         for i = 1, count, 1 do
+            draw(math.lerp((lastHit or pos),pos,i/count)+offset,side,vec(1,1,1))
+         end
       end
    end
    lastHit = pos
