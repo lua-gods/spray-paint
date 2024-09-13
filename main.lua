@@ -31,6 +31,24 @@ local surfaces = {
    down = {},
 }
 
+local invSide = {
+   ["north"] = 1,
+   ["east"] = 2,
+   ["south"] = 3,
+   ["west"] = 4,
+   ["up"] = 5,
+   ["down"] = 6,
+}
+
+local sside = {
+   "north",
+   "east",
+   "south",
+   "west",
+   "up",
+   "down",
+}
+
 local slots = {} ---@type table<integer,Surface>
 local proxies = {}
 
@@ -263,20 +281,21 @@ function Surface:sync()
    end)
    
    local data = base64.decode(syncTexture:save())
-   pings.syncSurface(data, self.side, self.surfacePos, self.slot, self.bID, self.uvPos, self.pos)
+   pings.syncSurface(data, invSide[self.side], self.slot, self.uvPos.x,self.uvPos.y, self.pos)
    return #data
 end
 
-function pings.syncSurface(data,side,surfacePos,nextFree,bID,uvPos,pos)
+function pings.syncSurface(data,side,nextFree,uvX,uvY,pos)
+   side = sside[side]
    local decompressed = base64.encode(data)
    syncTexture = textures:read("TextureSyncer",decompressed)
    if not hasSurface(pos,side) then
-      makeSurfaceRaw(side,nextFree,uvPos,pos)
+      makeSurfaceRaw(side,nextFree,vec(uvX,uvY),pos)
    end
    getSurface(pos,side).sprite:setRenderType("TRANSLUCENT_CULL"):setColor(1,1,1)
    if not host:isHost() then
-      atlasTexture:applyFunc(uvPos.x,uvPos.y,RESOLUTION,RESOLUTION,function (col, x, y)
-         return syncTexture:getPixel(x-uvPos.x,y-uvPos.y)
+      atlasTexture:applyFunc(uvX,uvY,RESOLUTION,RESOLUTION,function (col, x, y)
+         return syncTexture:getPixel(x-uvX,y-uvY)
       end)
       atlasTexture:update()
    end
