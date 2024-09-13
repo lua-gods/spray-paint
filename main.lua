@@ -286,7 +286,8 @@ end
 
 
 -->========================================[ Drawing ]=========================================<--
-
+local penColor = vec(1,1,1)
+local penSize = 1
 
 ---@param pos Vector3
 ---@param side Entity.blockSide
@@ -329,7 +330,7 @@ local function setBrushRadius(radius)
    end
 end
 
-setBrushRadius(4)
+
 local lastHit
 local function brush(pos,side)
    for i = 1, #proxies, 1 do -- rotate brush to face the surface
@@ -349,8 +350,8 @@ local function brush(pos,side)
       end
       local count = math.max(math.floor(((lastHit or pos)-pos):length()*RESOLUTION/2),1)
       if lastHit ~= pos then
-         for i = 1, count, 1 do
-            draw(math.lerp((lastHit or pos),pos,i/count)+offset,side,vec(1,1,1))
+         for i = 1, 1, 1 do
+            draw(math.lerp((lastHit or pos),pos,i/count)+offset,side,penColor)
          end
       end
    end
@@ -361,11 +362,10 @@ end
 
 if not host:isHost() then return end
 
-
 keybind.release = function () lastHit = nil end
 events.WORLD_RENDER:register(function(dt)
    if player:isLoaded() and keybind:isPressed() then
-      if host:isCursorUnlocked() then
+      if host:isChatOpen() then
          local mat = matrices.mat4()
          local crot = client:getCameraRot()
          local res = client:getWindowSize()
@@ -392,15 +392,98 @@ end)
 
 -->========================================[ User Interface ]=========================================<--
 
-local actionWheel = keybinds:fromVanilla("figura.config.action_wheel_button")
+local colors = {
+   "#131313",
+   "#1b1b1b",
+   "#272727",
+   "#3d3d3d",
+   "#5d5d5d",
+   "#858585",
+   "#b4b4b4",
+   "#ffffff",
+   "#c7cfdd",
+   "#92a1b9",
+   "#657392",
+   "#424c6e",
+   "#2a2f4e",
+   "#1a1932",
+   "#0e071b",
+   "#1c121c",
+   "#391f21",
+   "#5d2c28",
+   "#8a4836",
+   "#bf6f4a",
+   "#e69c69",
+   "#f6ca9f",
+   "#f9e6cf",
+   "#edab50",
+   "#e07438",
+   "#c64524",
+   "#8e251d",
+   "#ff5000",
+   "#ed7614",
+   "#ffa214",
+   "#ffc825",
+   "#ffeb57",
+   "#d3fc7e",
+   "#99e65f",
+   "#5ac54f",
+   "#33984b",
+   "#1e6f50",
+   "#134c4c",
+   "#0c2e44",
+   "#00396d",
+   "#0069aa",
+   "#0098dc",
+   "#00cdf9",
+   "#0cf1ff",
+   "#94fdff",
+   "#fdd2ed",
+   "#f389f5",
+   "#db3ffd",
+   "#7a09fa",
+   "#3003d9",
+   "#0c0293",
+   "#03193f",
+   "#3b1443",
+   "#622461",
+   "#93388f",
+   "#ca52c9",
+   "#c85086",
+   "#f68187",
+   "#f5555d",
+   "#ea323c",
+   "#c42430",
+   "#891e2b",
+   "#571c27",
+   }
 
-actionWheel.press = function ()
-   host:setUnlockCursor(true)
-   renderer:setRenderCrosshair(false)
-   return true
+local page = action_wheel:newPage("Colors")
+
+local index = 1
+local actionPicker = page:newAction()
+local actionSize = page:newAction()
+local actionEraser = page:newAction()
+
+local function pickerScroll(dir)
+   index = (index - 1 + dir) % #colors + 1
+   penColor = vectors.hexToRGB(colors[index])
+   actionPicker:setTitle(toJson({text="Brush Color: ||||||||||||",color=colors[index]}))
 end
 
-actionWheel.release = function ()
-   host:setUnlockCursor(false)
-   renderer:setRenderCrosshair(true)
+local function sizeScroll(dir)
+   penSize = math.clamp(penSize + dir, 1, 16)
+   setBrushRadius(penSize)
+   actionSize:setTitle(toJson({text="Brush Size: "..penSize}))
 end
+
+pickerScroll(0)
+sizeScroll(0)
+actionPicker:onScroll(pickerScroll):setItem("minecraft:brush"):onLeftClick(function () pickerScroll(0) end)
+actionSize:onScroll(sizeScroll):setItem("minecraft:slime_ball")
+actionEraser:onLeftClick(function ()
+   actionPicker:setTitle(toJson({text="Return to Color: ||||||||||||",color=colors[index]}))
+   penColor = vec(0,0,0,0)
+end):setTitle("Eraser Mode"):setItem("minecraft:brick")
+
+action_wheel:setPage(page)
