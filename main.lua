@@ -156,7 +156,7 @@ local function makeSurfaceRaw(side,nextFree,uvPos,pos)
    
    local bID = surfacePos.x .. "," .. surfacePos.y .. "," .. surfacePos.z
    sprite:setTexture(atlasTexture,ATLAS_RESOLUTION, ATLAS_RESOLUTION)
-   sprite:setRenderType("CUTOUT_CULL")
+   sprite:setRenderType("EMISSIVE_SOLID")
    sprite:setUV(uvPos/ATLAS_RESOLUTION)
    sprite:setRegion(RESOLUTION, RESOLUTION)
 
@@ -206,7 +206,7 @@ local function makeSurface(pos,side)
    nextFree = nextFree + 1
    local sprite = model:newSprite(tostring(nextFree))
    sprite:setTexture(atlasTexture,ATLAS_RESOLUTION, ATLAS_RESOLUTION)
-   sprite:setRenderType("CUTOUT_CULL")
+   sprite:setRenderType("EMISSIVE_SOLID")
    sprite:setUV(uvPos/ATLAS_RESOLUTION)
    sprite:setRegion(RESOLUTION, RESOLUTION)
    
@@ -217,11 +217,17 @@ end
 -->========================================[ Syncing ]=========================================<--
 
 local syncSize = 0
-local syncThreshold = 900
+local syncThreshold = 2000
 local syncNext
 local syncingCurrent ---@type Surface
 local priority = {}
 local inversePriority = {}
+local syncWaitTime = 1
+
+if false then
+   syncThreshold = 99999
+   syncWaitTime = 0.1
+end
 
 local timeSinceSync = 0
 local lastSystemTime = client:getSystemTime()
@@ -231,7 +237,7 @@ events.WORLD_RENDER:register(function ()
    lastSystemTime = systemTime
    
    timeSinceSync = timeSinceSync + delta
-   if timeSinceSync > 1 then
+   if timeSinceSync > syncWaitTime then
       timeSinceSync = 0
       syncSize = 0
    end
@@ -292,7 +298,7 @@ function pings.syncSurface(data,side,nextFree,uvX,uvY,pos)
    if not hasSurface(pos,side) then
       makeSurfaceRaw(side,nextFree,vec(uvX,uvY),pos)
    end
-   getSurface(pos,side).sprite:setRenderType("TRANSLUCENT_CULL"):setColor(1,1,1)
+   getSurface(pos,side).sprite:setRenderType("CUTOUT_EMISSIVE_SOLID"):setColor(1,1,1)
    if not host:isHost() then
       atlasTexture:applyFunc(uvX,uvY,RESOLUTION,RESOLUTION,function (col, x, y)
          return syncTexture:getPixel(x-uvX,y-uvY)
@@ -483,6 +489,7 @@ local index = 1
 local actionPicker = page:newAction()
 local actionSize = page:newAction()
 local actionEraser = page:newAction()
+local actionPasteImage = page:newAction()
 
 local function pickerScroll(dir)
    index = (index - 1 + dir) % #colors + 1
@@ -491,10 +498,64 @@ local function pickerScroll(dir)
 end
 
 local function sizeScroll(dir)
-   penSize = math.clamp(penSize + dir, 1, 16)
+   penSize = math.clamp(penSize + dir, 1, 128)
    setBrushRadius(penSize)
    actionSize:setTitle(toJson({text="Brush Size: "..penSize}))
 end
+
+
+actionPasteImage:onLeftClick(function ()
+	local input = file:openReadStream("paste.png")
+	local buffer = data:createBuffer(input:available())
+	buffer:readFromStream(input, input:available())
+	buffer:setPosition(0)
+	local base64 = buffer:readBase64(buffer:getLength())
+	local texture = textures:read("paste",base64)
+	local dim = texture:getDimensions()
+	input:close()
+	buffer:close()
+	
+	local cache = {}
+	local dim = texture:getDimensions()
+	local i = 0
+	local s = 1/dim.x
+	for x = 0, dim.x-1, 1 do
+		for y = 0, dim.y-1, 1 do
+		i = i + 1
+			cache[i] = {
+				x = (x-dim.x/2)*-s,
+				y = (y-dim.y/2)*-s,
+				color = texture:getPixel(x,y),
+				prev = cache[i-1]
+			}
+			if i > 1 then
+				cache[i-1].next = cache[i]
+			end
+		end
+	end
+	
+	local id = "sprayer" .. math.random(0,1000000)
+	local viewMat = matrices.mat4()
+	
+	viewMat:rotateX(player:getRot().x)
+	viewMat:rotateY(-player:getRot().y)
+	viewMat:translate(player:getPos():add(0,player:getEyeHeight(),0))
+	
+	local i = 1
+	events.WORLD_TICK:register(function ()
+		for _ = 1, 400, 1 do
+			if #cache == 0 then events.WORLD_TICK:remove(id) return end
+			i = i + 1
+			local data = cache[i]
+			if not data then events.WORLD_TICK:remove(id) return end
+			local block,hit,side = raycast:block(viewMat:apply(0,0,0),viewMat:apply(data.x*30,data.y*30,30))
+			if block then
+				draw(hit,side,data.color)
+			end
+		end
+	end,id)
+end)
+
 
 pickerScroll(0)
 sizeScroll(0)
