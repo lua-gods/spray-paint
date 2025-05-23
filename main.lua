@@ -537,9 +537,9 @@ actionPasteImage:onLeftClick(function ()
 	local id = "sprayer" .. math.random(0,1000000)
 	local viewMat = matrices.mat4()
 	
-	viewMat:rotateX(player:getRot().x)
-	viewMat:rotateY(-player:getRot().y)
-	viewMat:translate(player:getPos():add(0,player:getEyeHeight(),0))
+	viewMat:rotateX(client:getCameraRot().x)
+	viewMat:rotateY(-client:getCameraRot().y)
+	viewMat:translate(client:getCameraPos())
 	
 	local i = 1
 	events.WORLD_TICK:register(function ()
