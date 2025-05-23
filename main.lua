@@ -1,5 +1,3 @@
-
-
 local SURFACE_MARGIN = 0
 local RESOLUTION = 16
 local ATLAS_RESOLUTION = 2048
@@ -78,7 +76,7 @@ local Surface = {}
 Surface.__index = Surface
 
 function Surface:setPixel()
-   
+
 end
 
 function Surface:delete()
@@ -144,7 +142,7 @@ local function makeSurfaceRaw(side,nextFree,uvPos,pos)
    local tpos = (pos * 16 + 0.5):floor() / 16
    local bpos = pos:floor()
    local sprite = model:newSprite(tostring(nextFree))
-   
+
    local surfacePos
    if side == "north" then surfacePos = vec(bpos.x,bpos.y,tpos.z)
    elseif side == "east" then surfacePos = vec(tpos.x,bpos.y,bpos.z)
@@ -153,7 +151,7 @@ local function makeSurfaceRaw(side,nextFree,uvPos,pos)
    elseif side == "up" then surfacePos = vec(bpos.x,tpos.y,bpos.z)
    else --[[down]] surfacePos = vec(bpos.x,tpos.y,bpos.z)
    end
-   
+
    local bID = surfacePos.x .. "," .. surfacePos.y .. "," .. surfacePos.z
    sprite:setTexture(atlasTexture,ATLAS_RESOLUTION, ATLAS_RESOLUTION)
    sprite:setRenderType("EMISSIVE_SOLID")
@@ -163,14 +161,14 @@ local function makeSurfaceRaw(side,nextFree,uvPos,pos)
    local scale = 16 / ATLAS_RESOLUTION
 
    if side == "north" then
-sprite:scale(-scale,-scale,0):setPos(vec(bpos.x,bpos.y,tpos.z-SURFACE_MARGIN)*16)
+      sprite:scale(-scale,-scale,0):setPos(vec(bpos.x,bpos.y,tpos.z-SURFACE_MARGIN)*16)
    elseif side == "east" then sprite:scale(scale,-scale,0):setPos(vec(tpos.x+SURFACE_MARGIN,bpos.y,bpos.z)*16):setRot(0,90,0)
    elseif side == "south" then sprite:scale(scale,-scale,0):setPos(vec(bpos.x+1,bpos.y,tpos.z+SURFACE_MARGIN)*16)
    elseif side == "west" then sprite:scale(-scale,-scale,0):setPos(vec(tpos.x-SURFACE_MARGIN,bpos.y,bpos.z+1)*16):setRot(0,90,0)
    elseif side == "up" then sprite:scale(scale,scale,scale):setPos(vec(bpos.x,tpos.y+SURFACE_MARGIN,bpos.z)*16):setRot(90,180,0)
    else --[[down]] sprite:scale(scale,scale,-scale):setPos(vec(bpos.x,tpos.y-SURFACE_MARGIN,bpos.z)*16):setRot(90,90,180)
    end
-   
+
    local surface = {
       sprite = sprite,
       slot = nextFree,
@@ -197,8 +195,8 @@ local function makeSurface(pos,side)
    local id,surfacePos
    local uvPos = vec(
       (nextFree*RESOLUTION)%ATLAS_RESOLUTION,
-      math.floor(nextFree*RESOLUTION/ATLAS_RESOLUTION)*RESOLUTION)
-      
+      math.floor(nextFree*RESOLUTION/ATLAS_RESOLUTION)*RESOLUTION
+   )
    if nextFree >= (ATLAS_RESOLUTION/RESOLUTION)^2 then
       host:setActionbar("Out of graffiti slots")
       return
@@ -209,7 +207,7 @@ local function makeSurface(pos,side)
    sprite:setRenderType("EMISSIVE_SOLID")
    sprite:setUV(uvPos/ATLAS_RESOLUTION)
    sprite:setRegion(RESOLUTION, RESOLUTION)
-   
+
    local surface = makeSurfaceRaw(side,nextFree,uvPos,pos)
    return surface
 end
@@ -235,13 +233,13 @@ events.WORLD_RENDER:register(function ()
    local systemTime = client:getSystemTime()
    local delta = (systemTime - lastSystemTime) / 1000
    lastSystemTime = systemTime
-   
+
    timeSinceSync = timeSinceSync + delta
    if timeSinceSync > syncWaitTime then
       timeSinceSync = 0
       syncSize = 0
    end
-   
+
    if not syncingCurrent then
       if #priority > 0 then
          syncingCurrent = table.remove(priority)
@@ -250,7 +248,7 @@ events.WORLD_RENDER:register(function ()
          syncNext,syncingCurrent = next(slots,syncNext)
       end
    end
-   
+
    if syncingCurrent and syncSize < syncThreshold then
       local size = syncingCurrent:sync()
       syncSize = syncSize + size
@@ -285,7 +283,7 @@ function Surface:sync()
    syncTexture:applyFunc(0,0,RESOLUTION,RESOLUTION,function (col, x, y)
       return atlasTexture:getPixel(o.x+x,o.y+y)
    end)
-   
+
    local data = base64.decode(syncTexture:save())
    pings.syncSurface(data, invSide[self.side], self.slot, self.uvPos.x,self.uvPos.y, self.pos)
    return #data
@@ -306,7 +304,6 @@ function pings.syncSurface(data,side,nextFree,uvX,uvY,pos)
       atlasTexture:update()
    end
    syncPreview:setSprite(syncPreviewSprite:setTexture(syncTexture))
-   
 end
 
 
@@ -400,7 +397,7 @@ events.WORLD_RENDER:register(function(dt)
          mat:translate(client:getCameraPos())
          local block,hit,side = raycast:block(
          mat.c4.xyz,
-         mat.c4.xyz + (mat.c3.xyz 
+         mat.c4.xyz + (mat.c3.xyz
          - mat.c2.xyz * FOV * mpos.y
          - mat.c1.xyz * FOV * mpos.x) * 20
          , "COLLIDER", "NONE")
@@ -481,7 +478,7 @@ local colors = {
    "#c42430",
    "#891e2b",
    "#571c27",
-   }
+}
 
 local page = action_wheel:newPage("Colors")
 
@@ -503,57 +500,153 @@ local function sizeScroll(dir)
    actionSize:setTitle(toJson({text="Brush Size: "..penSize}))
 end
 
-
+local pasteImageId = 0
 actionPasteImage:onLeftClick(function ()
 	local input = file:openReadStream("paste.png")
 	local buffer = data:createBuffer(input:available())
 	buffer:readFromStream(input, input:available())
 	buffer:setPosition(0)
 	local base64 = buffer:readBase64(buffer:getLength())
-	local texture = textures:read("paste",base64)
+	local texture = textures:read("paste"..pasteImageId,base64)
 	local dim = texture:getDimensions()
 	input:close()
 	buffer:close()
-	
+
+	pasteImageId = (pasteImageId + 1) % 16
+
 	local cache = {}
 	local dim = texture:getDimensions()
 	local i = 0
-	local s = 1/dim.x
-	for x = 0, dim.x-1, 1 do
-		for y = 0, dim.y-1, 1 do
-		i = i + 1
-			cache[i] = {
-				x = (x-dim.x/2)*-s,
-				y = (y-dim.y/2)*-s,
-				color = texture:getPixel(x,y),
-				prev = cache[i-1]
-			}
-			if i > 1 then
-				cache[i-1].next = cache[i]
-			end
-		end
-	end
-	
-	local id = "sprayer" .. math.random(0,1000000)
+	local s = -1 / dim.x
+	local dim2 = dim / 2
+	local dimX = dim.x - 1
+	local dimY = dim.y - 1
+	local dimX2 = math.floor(dim.x / 2) + 1
+	local dimY2 = math.floor(dim.y / 2) + 1
+	local dimX3 = -dimX
+	local dimY3 = -dimY
+	-- for x = 0, dim.x-1, 1 do
+		-- for y = 0, dim.y-1, 1 do
+		-- i = i + 1
+			-- cache[i] = {
+				-- x = (x-dim2.x)*s,
+				-- y = (y-dim2.y)*s,
+				-- color = texture:getPixel(x,y),
+				-- prev = cache[i-1]
+			-- }
+			-- if i > 1 then
+				-- cache[i-1].next = cache[i]
+			-- end
+		-- end
+	-- end
+
+	local eventId = "sprayer" .. math.random(0,1000000)
 	local viewMat = matrices.mat4()
-	
+
 	viewMat:rotateX(client:getCameraRot().x)
 	viewMat:rotateY(-client:getCameraRot().y)
 	viewMat:translate(client:getCameraPos())
-	
+
+	local viewPos = viewMat:apply()
+	local viewMat2 = viewMat:copy():rightMultiply(matrices.scale4(30, 30, 30))
+
 	local i = 1
-	events.WORLD_TICK:register(function ()
-		for _ = 1, 400, 1 do
-			if #cache == 0 then events.WORLD_TICK:remove(id) return end
-			i = i + 1
-			local data = cache[i]
-			if not data then events.WORLD_TICK:remove(id) return end
-			local block,hit,side = raycast:block(viewMat:apply(0,0,0),viewMat:apply(data.x*30,data.y*30,30))
-			if block then
-				draw(hit,side,data.color)
+	-- events.WORLD_TICK:register(function ()
+	-- 	for _ = 1, 400, 1 do
+	-- 		if #cache == 0 then events.WORLD_TICK:remove(id) return end
+	-- 		i = i + 1
+	-- 		local data = cache[i]
+	-- 		if not data then events.WORLD_TICK:remove(id) return end
+	-- 		local block,hit,side = raycast:block(pos,viewMat:apply(data.x,data.y,1))
+	-- 		if block then
+	-- 			draw(hit,side,data.color)
+	-- 		end
+	-- 	end
+	-- end,id)
+	local depth = {[-26] = {}, [26] = {}}
+	for y = -26, 26 do
+	   depth[-26][y] = 0
+	   depth[26][y] = 0
+	end
+	local depthRes = {}
+	local stage = 1
+	local stage123X = -26
+	local mathMin = math.min
+	local mathMax = math.max
+	local mathFloor = math.floor
+	events.WORLD_TICK:register(function()
+	   if stage == -1 then
+			events.WORLD_TICK:remove(eventId)
+			return
+	   elseif stage == 1 then
+			for _ = 1, 8 do
+   			stage123X = stage123X + 1
+   			if stage123X > 25 then
+			      stage = 2
+   			   stage123X = -26
+               return
+   			end
+   			local x = stage123X / 51
+   			depth[stage123X] = {[-26] = 0, [26] = 0}
+   			for y = -25, 25 do
+			      local block,hit,side = raycast:block(viewPos,viewMat2:apply(x, y / 51, 1))
+					local length = (hit - viewPos):length()
+				   depth[stage123X][y] = length > 30 and 0 or length
+   			end
 			end
+		elseif stage == 2 then
+			for _ = 1, 8 do
+       		stage123X = stage123X + 1
+            if stage123X > 25 then
+               stage = 3
+               stage123X = -26
+               return
+            end
+            depthRes[stage123X] = {}
+            for y = -25, 25 do
+               local max = 0
+               for sx = -1, 1 do
+                  for sy = -1, 1 do
+                     max = mathMax(max, depth[stage123X + sx][y + sy])
+                  end
+               end
+               depthRes[stage123X][y] = max
+            end
+         end
+      elseif stage == 3 then
+         stage123X = stage123X + 1
+         if stage123X > 25 then
+            stage = -1
+            stage123X = -26
+            return
+         end
+         for y = -25, 25 do
+            local resRaw = depthRes[stage123X][y]
+            local res = mathMin(mathFloor(resRaw / 3), 6)
+            local res2 = res + 1
+            for sx = 0, res do
+               for sy = 0, res do
+                  local pX = (stage123X + sx / res2) / 51
+                  local pY = (y + sy / res2) / 51
+                  local block, hit, side = raycast:block(
+                     viewPos,
+                     viewMat2:apply(pX, pY, 1)
+                  )
+                  draw(
+                     hit,
+                     side,
+                     texture:getPixel(
+                        mathMax(pX * dimX3 + dimX2, 0),
+                        mathMax(pY * dimY3 + dimY2, 0)
+                     )
+                  )
+                  -- particles['end_rod']:pos(hit):color(res > 5 and 1 or 0, mathMin(res / 5, 1), 0):lifetime(500):gravity(0):spawn()
+                  -- particles['end_rod']:pos(hit):color(stage123X / 51 + 0.5, y / 51 + 0.5, res / 4):lifetime(500):gravity(0):spawn()
+               end
+            end
+         end
 		end
-	end,id)
+	end, eventId)
 end)
 
 
